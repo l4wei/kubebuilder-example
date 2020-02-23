@@ -1,0 +1,7 @@
+apiVersion: devops.my.domain/v1
+kind: DemoMicroService
+metadata:
+  name: demomicroservice-sample
+spec:
+  # Add fields here
+  foo: bar
