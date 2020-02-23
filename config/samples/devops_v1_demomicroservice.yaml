@@ -3,5 +3,4 @@ kind: DemoMicroService
 metadata:
   name: demomicroservice-sample
 spec:
-  # Add fields here
-  foo: bar
+  Image: stefanprodan/podinfo:0.0.1
