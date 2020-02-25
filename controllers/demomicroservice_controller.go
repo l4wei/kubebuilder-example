@@ -22,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"my.domain/example/util"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -34,6 +35,10 @@ type DemoMicroServiceReconciler struct {
 	Log    logr.Logger
 	Scheme *runtime.Scheme
 }
+
+const (
+	demoMicroServiceFinalizer string = "demomicroservice.finalizers.devops.my.domain"
+)
 
 // +kubebuilder:rbac:groups=devops.my.domain,resources=demomicroservices,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=devops.my.domain,resources=demomicroservices/status,verbs=get;update;patch
@@ -53,7 +58,44 @@ func (r *DemoMicroServiceReconciler) Reconcile(req ctrl.Request) (ctrl.Result, e
 		}
 	}
 
-	log.Info("走到这里意味着 DemoMicroService resource 被找到，即该 resource 被成功创建，进入到了可根据该 resource 来执行逻辑的主流程")
+	if dms.ObjectMeta.DeletionTimestamp.IsZero() {
+		log.Info("进入到 apply 这个 DemoMicroService CR 的逻辑")
+		log.Info("此时必须确保 resource 的 finalizers 里有控制器指定的 finalizer")
+		if !util.ContainsString(dms.ObjectMeta.Finalizers, demoMicroServiceFinalizer) {
+			dms.ObjectMeta.Finalizers = append(dms.ObjectMeta.Finalizers, demoMicroServiceFinalizer)
+			if err := r.Update(ctx, dms); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+
+		if _, err := r.applyDeployment(ctx, req, dms); err != nil {
+			return ctrl.Result{}, nil
+		}
+	} else {
+		log.Info("进入到删除这个 DemoMicroService CR 的逻辑")
+		if util.ContainsString(dms.ObjectMeta.Finalizers, demoMicroServiceFinalizer) {
+			log.Info("如果 finalizers 被清空，则该 DemoMicroService CR 就已经不存在了，所以必须在次之前删除 Deployment")
+			if err := r.cleanDeployment(ctx, req); err != nil {
+				return ctrl.Result{}, nil
+			}
+		}
+		log.Info("清空 finalizers，在此之后该 DemoMicroService CR 才会真正消失")
+		dms.ObjectMeta.Finalizers = util.RemoveString(dms.ObjectMeta.Finalizers, demoMicroServiceFinalizer)
+		if err := r.Update(ctx, dms); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	return ctrl.Result{}, nil
+}
+
+func (r *DemoMicroServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&devopsv1.DemoMicroService{}).
+		Complete(r)
+}
+
+func (r *DemoMicroServiceReconciler) applyDeployment(ctx context.Context, req ctrl.Request, dms *devopsv1.DemoMicroService) (*appv1.Deployment, error) {
 	podLabels := map[string]string{
 		"app": req.Name,
 	}
@@ -91,15 +133,36 @@ func (r *DemoMicroServiceReconciler) Reconcile(req ctrl.Request) (ctrl.Result, e
 			},
 		},
 	}
-	if err := r.Create(ctx, &deployment); err != nil {
-		log.Error(err, "创建 Deployment resource 出错")
-		return ctrl.Result{}, err
+	oldDeployment := &appv1.Deployment{}
+	if err := r.Get(ctx, req.NamespacedName, oldDeployment); err != nil {
+		if err := client.IgnoreNotFound(err); err == nil {
+			// 如果 deployment 不存在，则创建它
+			if err := r.Create(ctx, &deployment); err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
 	}
-	return ctrl.Result{}, nil
+	// 此时表示 deployment 已经存在，则更新它
+	if err := r.Update(ctx, &deployment); err != nil {
+		return nil, err
+	}
+	return &deployment, nil
 }
 
-func (r *DemoMicroServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&devopsv1.DemoMicroService{}).
-		Complete(r)
+func (r *DemoMicroServiceReconciler) cleanDeployment(ctx context.Context, req ctrl.Request) error {
+	deployment := &appv1.Deployment{}
+	if err := r.Get(ctx, req.NamespacedName, deployment); err != nil {
+		if err := client.IgnoreNotFound(err); err == nil {
+			// 既然已经没了，do nothing
+			return nil
+		} else {
+			return err
+		}
+	}
+	if err := r.Delete(ctx, deployment); err != nil {
+		return err
+	}
+	return nil
 }
