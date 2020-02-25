@@ -38,6 +38,7 @@ type DemoMicroServiceStatus struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:resource:shortName=dms
 
 // DemoMicroService is the Schema for the demomicroservices API
 type DemoMicroService struct {

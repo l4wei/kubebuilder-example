@@ -13,6 +13,8 @@ spec:
     kind: DemoMicroService
     listKind: DemoMicroServiceList
     plural: demomicroservices
+    shortNames:
+    - dms
     singular: demomicroservice
   scope: Namespaced
   validation:
