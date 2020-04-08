@@ -42,6 +42,7 @@ const (
 
 // +kubebuilder:rbac:groups=devops.my.domain,resources=demomicroservices,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=devops.my.domain,resources=demomicroservices/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=extensions;apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 
 func (r *DemoMicroServiceReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	ctx := context.Background()
